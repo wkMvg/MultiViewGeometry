@@ -60,7 +60,7 @@ public:
     void computeHomo(Eigen::Matrix<double,3,3>& currHomo, 
                                 vector<pair<KeyPoint,KeyPoint>> pairs);
     void computeHomo_leastSquare();
-    void checkHomo(vector<bool>& isInliers, double& score);
+    void checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo);
     void showKeyPoint();
     void showMatch();
 private:

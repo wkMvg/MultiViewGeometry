@@ -21,9 +21,6 @@ mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
     normalize();
     ransacAffine(maxIterations);
     computeHomo_leastSquare();
-
-    mSim3Nl = Eigen::Matrix<double,3,3>::Identity();
-    mSim3Nr = Eigen::Matrix<double,3,3>::Identity();
 }
 
 void mvg::computeFeat(const int nfeatures)
@@ -77,6 +74,8 @@ void mvg::showKeyPoint()
     imshow("keypointsL",keypointImgl);
     imshow("keypointsR",keypointImgr);
 
+    imwrite("keypointsL.tif",keypointImgl);
+    imwrite("keypointsR.tif",keypointImgr);
     waitKey();
 }
 
@@ -91,6 +90,7 @@ void mvg::showMatch()
     drawMatches(mImgl, mKeypointl, mImgr, mKeypointr,
                 mMatches, imgMatch, Scalar(255,0,0));
     imshow("matches",imgMatch);
+    imwrite("matches.tif",imgMatch);
     waitKey();
 }
 
@@ -149,6 +149,8 @@ void mvg::normalize()
         keypoint2.pt.x /= meanDevx2;
         keypoint2.pt.y /= meanDevy2;
     }
+	mSim3Nl = Eigen::Matrix<double, 3, 3>::Identity();
+	mSim3Nr = Eigen::Matrix<double, 3, 3>::Identity();
     mSim3Nl(0,0) = 1 / meanDevx1;    mSim3Nl(0,2) = -meanx1 / meanDevx1;
     mSim3Nl(1,1) = 1 / meanDevy1;    mSim3Nl(1,2) = -meany1 / meanDevy1;
     
@@ -201,9 +203,9 @@ void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
 
 //@param isInliers 通过bool存储当前匹配是否是inliers
 //@param score 判断当前单应矩阵的分数
- void mvg::checkHomo(vector<bool>& isInliers, double& score)
+ void mvg::checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo)
  {
-     Eigen::Matrix<double,3,3> homolr = mSim3Nr.inverse() * mHomoMat * mSim3Nl;
+     Eigen::Matrix<double,3,3> homolr = mSim3Nr.inverse() * currHomo * mSim3Nl;
      Eigen::Matrix<double,3,3> homorl = homolr.inverse();
      
      double hlr0 = homolr(0,0), hlr1 = homolr(0,1), hlr2 = homolr(0,2),
@@ -215,7 +217,7 @@ void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
 
      score = 0;
      int n = mMatches.size();
-     double reprojectionThresh = 6;
+     double reprojectionThresh = 12;
 
      for(int i = 0; i < n; i++)
      {
@@ -289,10 +291,11 @@ void mvg::ransacAffine(const int maxIterations)
         //计算当前八个点的单应矩阵
         computeHomo(currHomo, selectedPairs);
         //判断当前单应矩阵下的inliers
-        checkHomo(isInliersCurr, currScore);
+        checkHomo(isInliersCurr, currScore, currHomo);
 
         if(currScore > score)
         {
+			score = currScore;
             mIsInliers_Homo = isInliersCurr;
             mHomoMat = mSim3Nr.inverse() * currHomo * mSim3Nr;
         }
