@@ -161,7 +161,7 @@ void mvg::normalize()
 //@param pairs 用来计算单应矩阵的特征点匹配对
 //@param currHomo 计算得到的单应矩阵
 void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
-                                vector<pair<KeyPoint,KeyPoint>> pairs)
+                                const vector<pair<KeyPoint,KeyPoint>> pairs)
 {
     int n = pairs.size();
     Eigen::MatrixXd A(n*2,9);
@@ -194,11 +194,11 @@ void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
         A(2*i+1, 8) = -v2;
     }
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeFullU|Eigen::ComputeFullV);
-    Eigen::Matrix<double,9,9> vt = svd.matrixV().transpose();
+    Eigen::Matrix<double,9,9> v = svd.matrixV();
 
-    currHomo(0,0) = vt(0,8); currHomo(0,1) = vt(1,8); currHomo(0,2) = vt(2,8);
-    currHomo(1,0) = vt(3,8); currHomo(1,1) = vt(4,8); currHomo(1,2) = vt(5,8);
-    currHomo(2,0) = vt(6,8); currHomo(2,1) = vt(7,8); currHomo(2,2) = vt(8,8);
+    currHomo(0,0) = v(0,8); currHomo(0,1) = v(1,8); currHomo(0,2) = v(2,8);
+    currHomo(1,0) = v(3,8); currHomo(1,1) = v(4,8); currHomo(1,2) = v(5,8);
+    currHomo(2,0) = v(6,8); currHomo(2,1) = v(7,8); currHomo(2,2) = v(8,8);
 }
 
 //@param isInliers 通过bool存储当前匹配是否是inliers
@@ -231,7 +231,7 @@ void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
          double u2lr = (hlr0 * u1 + hlr1 * v1 + hlr2) / (hlr6 * u1 + hlr7 * v1 + hlr8);
          double v2lr = (hlr3 * u1 + hlr4 * v1 + hlr5) / (hlr6 * u1 + hlr7 * v1 + hlr8);
 
-         double squrelr = (u1 * u1 - u2lr * u2lr) + (v1 * v1 - v2lr * v2lr);
+         double squrelr = (u2 - u2lr) * (u2 - u2lr) + (v2 - v2lr) * (v2 - v2lr);
 
          if(squrelr > reprojectionThresh)
             bin = false;
@@ -241,7 +241,7 @@ void mvg::computeHomo(Eigen::Matrix<double,3,3>& currHomo,
          double u1rl = (hrl0 * u2 + hrl1 * v2 + hrl2) / (hrl6 * u2 + hrl7 * v2 + hrl8);
          double v1rl = (hrl3 * u2 + hrl4 * v2 + hrl5) / (hrl6 * u2 + hrl7 * v2 + hrl8);
 
-         double squrerl = (u2 * u2 - u1rl * u1rl) + (v2 * v2 - v1rl * v1rl);
+         double squrerl = (u1 - u1rl) * (u1 - u1rl) + (v1 - v1rl) * (v1 - v1rl);
 
          if(squrerl > reprojectionThresh)
             bin = false;
