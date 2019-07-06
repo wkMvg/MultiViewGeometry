@@ -126,10 +126,10 @@ void mvg::normalize()
         keypoint2.pt.x -= meanx2;
         keypoint2.pt.y -= meany2;
 
-        meanDevx1 += keypoint1.pt.x;
-        meanDevy1 += keypoint1.pt.y;
-        meanDevx2 += keypoint2.pt.x;
-        meanDevy2 += keypoint2.pt.y;
+        meanDevx1 += fabs(keypoint1.pt.x);
+        meanDevy1 += fabs(keypoint1.pt.y);
+        meanDevx2 += fabs(keypoint2.pt.x);
+        meanDevy2 += fabs(keypoint2.pt.y);
 
         mKeypointl_r_norm.push_back(make_pair(keypoint1, keypoint2));
     }
@@ -141,8 +141,8 @@ void mvg::normalize()
 
     for(int i = 0; i < N; i++)
     {
-        KeyPoint keypoint1 = mKeypointl_r_norm[i].first;
-        KeyPoint keypoint2 = mKeypointl_r_norm[i].second;
+        KeyPoint& keypoint1 = mKeypointl_r_norm[i].first;
+        KeyPoint& keypoint2 = mKeypointl_r_norm[i].second;
 
         keypoint1.pt.x /= meanDevx1;
         keypoint1.pt.y /= meanDevy1;
@@ -267,13 +267,10 @@ void mvg::ransacAffine(const int maxIterations)
     
     for(int i = 0; i < maxIterations; i++)
     {
-        for(int j = 0; j < 8; j++)
-        {
-            vector<size_t> randomIndexOneGroup(8,0);
-            UniformSample<size_t,mt19937,uint32_t>(size_t(8), random_generator,
+		vector<size_t> randomIndexOneGroup(8,0);
+        UniformSample<size_t,mt19937,uint32_t>(size_t(8), random_generator,
                                                 &vec_index, &randomIndexOneGroup);
-            randomIndexGroup.push_back(randomIndexOneGroup);
-        }
+        randomIndexGroup.push_back(randomIndexOneGroup);
     }
 
     vector<bool> isInliersCurr(mMatches.size(), false);
