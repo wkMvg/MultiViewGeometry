@@ -313,3 +313,123 @@ void mvg::computeHomo_leastSquare()
 
     mHomoMat = mSim3Nr.inverse() * currHomo * mSim3Nl;
 }
+
+void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
+                            vector<pair<KeyPoint,KeyPoint>> pairs)
+{
+    const size_t n = pairs.size();
+    Eigen::MatrixXd A(n,9);
+
+    for(int i = 0; i<n; i++)
+    {
+        size_t u1 = pairs[i].first.pt.x;
+        size_t v1 = pairs[i].first.pt.y;
+        size_t u2 = pairs[i].second.pt.x;
+        size_t v2 = pairs[i].second.pt.y;
+
+        A(i,0) = u1*u2; A(i,1) = u1*v2; A(i,2) = u1;
+        A(i,3) = v1*u2; A(i,4) = v1*v2; A(i,5) = v1;
+        A(i,6) = u2; A(i,7) = v2; A(i,8) = 1;
+    }
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeFullU|Eigen::ComputeFullV);
+    Eigen::Matrix<double,9,9> v = svd.matrixV();
+
+    fundaMat(0,0) = v(0,8); fundaMat(0,1) = v(1,8); fundaMat(0,2) = v(2,8);
+    fundaMat(1,0) = v(3,8); fundaMat(1,1) = v(4,8); fundaMat(1,2) = v(5,8);
+    fundaMat(2,0) = v(6,8); fundaMat(2,1) = v(7,8); fundaMat(2,2) = v(8,8);
+}
+
+/*基础矩阵似乎不用再乘以相似变换矩阵，因为f矩阵的奇异性？*/
+void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund)
+{
+    const size_t n = isInliers.size();
+    const double f11 = currFund(0,0), f12 = currFund(0,1), f13 = currFund(0,2),
+                 f21 = currFund(1,0), f22 = currFund(1,1), f23 = currFund(1,2),
+                 f31 = currFund(2,0), f32 = currFund(2,1), f33 = currFund(2,2);
+
+    bool bIn = false;
+    score = 0;
+    const double dist_thresh = 5;
+    for(int i = 0; i<n; i++)
+    {
+        const int u1 = mKeypointl_r[i].first.pt.x;
+        const int v1 = mKeypointl_r[i].first.pt.y;
+        const int u2 = mKeypointl_r[i].second.pt.x;
+        const int v2 = mKeypointl_r[i].second.pt.y;          
+
+        /*计算(u1,v1)经过基础矩阵投影到对应图像上的极线方程 */
+        const int a2 = u1*f11 + v1*f12 + f13;
+        const int b2 = u1*f21 + v1*f22 + f23;
+        const int c2 = u1*f31 + v1*f32 + f33;
+
+        /*计算对应点到极线的距离，作为判断*/
+        const double epipolar_norm1 = u2*a2 + v2*b2 + c2;
+        const double distance1 = epipolar_norm1 * epipolar_norm1 / (a2 * a2 + b2 * b2); 
+        if(distance1 > dist_thresh)
+            bIn = false;
+        else
+            score += dist_thresh - distance1;
+
+        /*计算(u2,v2)经过基础矩阵投影到对应图像上的极线方程*/
+        const int a1 = u2*f11 + v2*f12 + f13;
+        const int b1 = u2*f21 + v2*f22 + f23;
+        const int c1 = u2*f31 + v2*f32 + f33;
+
+        /*计算对应点到极线的距离，作为判断*/
+        const double epipolar_norm2 = u1*a1 + v1*b1 + c1;
+        const double distance2 = epipolar_norm2 * epipolar_norm2 / (a1 * a1 + b1 * b1);
+        if(distance2 > dist_thresh)
+            bIn = true;
+        else
+            score += dist_thresh - distance2;
+
+        if(bIn)
+            isInliers[i] = true;
+        else
+            isInliers[i] = false;
+        
+    }
+}
+
+//通过ransac去除基础矩阵的outlier
+//@param maxIterations ransac要进行的最大迭代次数
+void mvg::ransacFundamental(const int maxIterations)
+{
+    /*首先需要一个随机数生成器，生成计算模型所需的最少随机数量 */
+    mt19937 random_generator(mt19937::default_seed);
+    vector<vector<size_t>> randomIndexGroup; // 生成最大迭代组数的随机数组
+    vector<size_t> vec_index(mMatches.size());
+    std::iota(vec_index.begin(),vec_index.end(),0);
+    
+    for(int i = 0; i < maxIterations; i++)
+    {
+		vector<size_t> randomIndexOneGroup(8,0);
+        UniformSample<size_t,mt19937,uint32_t>(size_t(8), random_generator,
+                                                &vec_index, &randomIndexOneGroup);
+        randomIndexGroup.push_back(randomIndexOneGroup);
+    }
+
+    vector<bool> isInliersCurr(mMatches.size(), false);
+    double score = 0;
+    double currScore = 0;
+    /*根据最大次数进行迭代，从中取出分数最大的即可*/
+    for(int i = 0; i < maxIterations; i++)
+    {
+        vector<pair<KeyPoint,KeyPoint>> selectedPairs(8);
+        Eigen::Matrix<double,3,3> currFundamentalMat;
+        for(int j = 0; j < 8; j++)
+        {
+            selectedPairs.push_back(mKeypointl_r_norm[randomIndexGroup[i][j]]);
+        }
+
+        computeFundamental(currFundamentalMat,selectedPairs);
+        checkFunda(isInliersCurr,currScore,currFundamentalMat);
+
+        if(currScore > score)
+        {
+            score = currScore;
+            mIsInliers_Funda = isInliersCurr;
+            mFundaMat = currFundamentalMat;
+        }
+    }
+}

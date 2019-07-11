@@ -4,9 +4,10 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "E:\\Projects\\opencv-3.4.5\\build\\install\\include",
-                "E:\\Projects\\opencv-3.4.5\\build\\install\\include\\opencv",
-                "E:\\Projects\\opencv-3.4.5\\build\\install\\include\\opencv2"
+                "E:\\opencv-3.4.4\\build\\install\\include",
+                "E:\\opencv-3.4.4\\build\\install\\include\\opencv",
+                "E:\\opencv-3.4.4\\build\\install\\include\\opencv2",
+                "E:\\eigen-eigen-323c052e1731"
             ],
             "defines": [
                 "_DEBUG",
@@ -14,7 +15,7 @@
                 "_UNICODE"
             ],
             "windowsSdkVersion": "10.0.17763.0",
-            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.21.27702/bin/Hostx64/x64/cl.exe",
+            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2017/Professional/VC/Tools/MSVC/14.12.25827/bin/Hostx64/x64/cl.exe",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "msvc-x64"

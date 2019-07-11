@@ -56,11 +56,15 @@ public:
     void computeFeat(const int nfeatures); //计算特征点和描述子
     void computeMatches(const float ratio); //计算特征点间的匹配
     void ransacAffine(const int maxIterations); //对affine变化利用ransac去除outlier
+    void ransacFundamental(const int maxIterations); //对基础矩阵模型，利用ransac去除outlier
     void normalize(); //归一化特征点坐标
     void computeHomo(Eigen::Matrix<double,3,3>& currHomo, 
                                 vector<pair<KeyPoint,KeyPoint>> pairs);
+    void computeFundamental(Eigen::Matrix<double,3,3>& currFundaMat,
+                                vector<pair<KeyPoint,KeyPoint>> pairs);
     void computeHomo_leastSquare();
     void checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo);
+    void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);
     void showKeyPoint();
     void showMatch();
 private:
@@ -75,9 +79,11 @@ private:
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r; //匹配坐标对
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r_norm; // 归一化匹配坐标对
     vector<bool> mIsInliers_Homo;
+    vector<bool> mIsInliers_Funda;
 
     Eigen::Matrix<double,3,3> mSim3Nl;
     Eigen::Matrix<double,3,3> mSim3Nr;
     Eigen::Matrix<double,3,3> mHomoMat;
+    Eigen::Matrix<double,3,3> mFundaMat;
 };
 
