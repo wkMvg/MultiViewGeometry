@@ -433,3 +433,54 @@ void mvg::ransacFundamental(const int maxIterations)
         }
     }
 }
+
+/*从f矩阵恢复R,T和三维坐标*/
+void mvg::constructF()
+{
+    int n = 0;
+    for(int i = 0; i < mIsInliers_Funda.size(); i++)
+    {
+        if(mIsInliers_Funda[i])
+            n++;
+    }
+    /*1.首先通过最小二乘从ransac挑选出的inliers里进行拟合*/
+    Eigen::MatrixXd A(n,9);
+    for(int i = 0; i < mIsInliers_Funda.size(); i++)
+    {
+        if(mIsInliers_Funda[i])
+        {
+            const size_t u1 = mKeypointl_r_norm[i].first.pt.x;
+            const size_t v1 = mKeypointl_r_norm[i].first.pt.y;
+            const size_t u2 = mKeypointl_r_norm[i].second.pt.x;
+            const size_t v2 = mKeypointl_r_norm[i].second.pt.y;
+
+            A(i,0) = u1*u2; A(i,1) = u1*v2; A(i,2) = u1;
+            A(i,3) = v1*u2; A(i,4) = v1*v2; A(i,5) = v1;
+            A(i,6) = u2;    A(i,7) = v2;    A(i,8) = 1;
+        }
+    }
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd_f(A,Eigen::ComputeFullU||Eigen::ComputeFullV);
+    Eigen::Matrix<double,9,9> V = svd_f.matrixV();
+
+    mFundaMat(0,0) = V(0,8); mFundaMat(0,1) = V(1,8); mFundaMat(0,2) = V(2,8);
+    mFundaMat(1,0) = V(3,8); mFundaMat(1,1) = V(4,8); mFundaMat(1,2) = V(5,8);
+    mFundaMat(2,0) = V(6,8); mFundaMat(2,1) = V(7,8); mFundaMat(2,2) = V(8,8);
+
+    /*2.利用得到的基础矩阵分解得到R,T
+    z = [0 1 0; -1 0 0; 0 0 0];
+    w = [0 -1 0; 1 0 0; 0 0 1];
+    z*w = [1 0 0; 0 1 0; 0 0 0];
+    z*wt = -[1 0 0; 0 1 0; 0 0 0];
+    f = UDVt = UzwVt = UzUt* UwVt = t^ * R;
+    f = UDVt = -UzwtVt = -UzUt*UwtVt = t^ * R;
+    所以:
+    t^ = UzUt; t^ = -UzUt;
+    R = UwVt; R = UwtVt;
+    因此，从基础矩阵会分解出四组解，但是只有一组解在相机前方。
+    */
+   Eigen::JacobiSVD<Eigen::MatrixXd> svd_rt(mFundaMat,Eigen::ComputeFullU||Eigen::ComputeFullV);
+   Eigen::Matrix<double,3,3> U_rt = svd_rt.matrixU();
+   Eigen::Matrix<double,3,3> V_rt = svd_rt.matrixV();
+
+
+}

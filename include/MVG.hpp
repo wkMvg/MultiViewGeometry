@@ -67,6 +67,9 @@ public:
     void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);
     void showKeyPoint();
     void showMatch();
+
+    void constructH();
+    void constructF();
 private:
     Mat mImgl; // 图像
     Mat mImgr; 
