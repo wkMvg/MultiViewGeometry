@@ -13,6 +13,8 @@
 using namespace std;
 using namespace cv;
 
+namespace wkMvg{
+
 /*Fisher-Yates_shuffle 洗牌算法
   不断缩小范围生成随机数，并且与当前id进行交换，实现随机交换，本质上实现了n！的排列数量*/
 template<typename T, class RandomGenerator,
@@ -52,7 +54,7 @@ class mvg
 {
 public:
     mvg(string dir1, string dir2, const int nfeatures, const float ratio, const int
-        maxIterations);
+        maxIterations, Eigen::Matrix<double,3,3> intrisicK);
     void computeFeat(const int nfeatures); //计算特征点和描述子
     void computeMatches(const float ratio); //计算特征点间的匹配
     void ransacAffine(const int maxIterations); //对affine变化利用ransac去除outlier
@@ -70,6 +72,12 @@ public:
 
     void constructH();
     void constructF();
+    Eigen::Matrix<double,3,1> triangulate(const KeyPoint& p1, const KeyPoint& p2, const Eigen::Matrix<double,3,3>& R1,
+                                        const Eigen::Matrix<double,3,3>& R2,
+                                        const Eigen::Matrix<double,3,1>& t1,
+                                        const Eigen::Matrix<double,3,1>& t2);
+    void checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double,3,1>& t,
+                vector<bool>& vgood, const float th, vector<Eigen::Vector3d>& p3d, size_t& nGood);
 private:
     Mat mImgl; // 图像
     Mat mImgr; 
@@ -81,12 +89,15 @@ private:
     vector<DMatch> mMatches; //匹配index
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r; //匹配坐标对
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r_norm; // 归一化匹配坐标对
-    vector<bool> mIsInliers_Homo;
-    vector<bool> mIsInliers_Funda;
+    vector<bool> mIsInliers_Homo; //通过单应ransac找到的inliers
+    vector<bool> mIsInliers_Funda; //通过基础矩阵ransac找到的inliers
 
-    Eigen::Matrix<double,3,3> mSim3Nl;
-    Eigen::Matrix<double,3,3> mSim3Nr;
-    Eigen::Matrix<double,3,3> mHomoMat;
-    Eigen::Matrix<double,3,3> mFundaMat;
+    Eigen::Matrix<double,3,3> mIntrinsicK; //相机内参矩阵
+    Eigen::Matrix<double,3,3> mSim3Nl;  //左侧相机归一化相似变换矩阵
+    Eigen::Matrix<double,3,3> mSim3Nr;  //右侧相机归一化相似变换矩阵
+    Eigen::Matrix<double,3,3> mHomoMat; //单应变换矩阵 
+    Eigen::Matrix<double,3,3> mFundaMat; //基础矩阵
+    Eigen::Matrix<double,3,3> mEssenMat; //本质矩阵
 };
+}
 

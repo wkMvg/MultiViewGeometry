@@ -1,13 +1,16 @@
 #include "MVG.hpp"
 
+using namespace wkMvg;
 //@param dir1,dir2 输入图像的地址
 //@param nfeatures 检测到图像特征点的数量
 //该构造函数用来计算仿射变换
 mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
-        const int maxIterations)
+        const int maxIterations, Eigen::Matrix<double,3,3> intrinsicK)
 {
     mImgl = imread(dir1);
     mImgr = imread(dir2);
+
+    mIntrinsicK = intrinsicK;
 
     computeFeat(nfeatures);
     showKeyPoint();
@@ -314,6 +317,8 @@ void mvg::computeHomo_leastSquare()
     mHomoMat = mSim3Nr.inverse() * currHomo * mSim3Nl;
 }
 
+/*@param fundaMat 基础矩阵
+@param paris 用于计算基础矩阵的像素点对 */
 void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
                             vector<pair<KeyPoint,KeyPoint>> pairs)
 {
@@ -340,6 +345,9 @@ void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
 }
 
 /*基础矩阵似乎不用再乘以相似变换矩阵，因为f矩阵的奇异性？*/
+/*@param isInliers 存储在基础矩阵模型中ransac的inliers
+@param score 通过重投影误差来统计该基础矩阵的分数
+@param currFund 当前ransac计算得到的基础矩阵 */
 void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund)
 {
     const size_t n = isInliers.size();
@@ -434,6 +442,131 @@ void mvg::ransacFundamental(const int maxIterations)
     }
 }
 
+/*[-1,0,u;0,-1,v] * projectiveMat * p_3d = 0
+利用svd分解求解齐次线性方程组，即可完成三角化 */
+/*@param p1 左图关键点
+@param p2 右图关键点
+@param R1 全局坐标系转换到左相机下的旋转矩阵
+@param R2 全局坐标系转换到右相机下的旋转矩阵
+@param t1 全局坐标系平移到左相机下的平移向量
+@param t2 全局坐标系平移到右相机下的平移向量 */
+Eigen::Matrix<double,3,1> mvg::triangulate(const KeyPoint& p1, const KeyPoint& p2,
+                            const Eigen::Matrix<double,3,3>& R1,
+                            const Eigen::Matrix<double,3,3>& R2,
+                            const Eigen::Matrix<double,3,1>& t1,
+                            const Eigen::Matrix<double,3,1>& t2)
+{
+    Eigen::Matrix<double,3,1> p_3d;
+
+    //构建投影矩阵
+    Eigen::Matrix<double,3,4> project1, project2;
+    project1(0,0) = R1(0,0); project1(0,1) = R1(0,1); project1(0,2) = R1(0,2); project1(0,3) = t1(0,0);
+    project1(1,0) = R1(1,0); project1(1,1) = R1(1,1); project1(1,2) = R1(1,2); project1(1,3) = t1(1,0);
+    project1(2,0) = R1(2,0); project1(2,1) = R1(2,1); project1(2,2) = R1(2,2); project1(2,3) = t1(2,0);
+
+    project2(0,0) = R2(0,0); project2(0,1) = R2(0,1); project2(0,2) = R2(0,2); project2(0,3) = t2(0,0);
+    project2(1,0) = R2(1,0); project2(1,1) = R2(1,1); project2(1,2) = R2(1,2); project2(1,3) = t2(1,0);
+    project2(2,0) = R2(2,0); project2(2,1) = R2(2,1); project2(2,2) = R2(2,2); project2(2,3) = t2(2,0); 
+
+    project1 = mIntrinsicK * project1;
+    project2 = mIntrinsicK * project2;
+
+    Eigen::Matrix<double,2,3> _p1,_p2;
+    _p1<<-1,0,p1.pt.x,0,-1,p1.pt.y;
+    _p2<<-1,0,p2.pt.x,0,-1,p2.pt.y;
+
+    Eigen::Matrix<double,2,4> a1 = _p1 * project1;
+    Eigen::Matrix<double,2,4> a2 = _p2 * project2;
+
+    //构建系数矩阵
+    Eigen::Matrix<double,4,4> A;
+    A(0,0) = a1(0,0); A(0,1) = a1(0,1); A(0,2) = a1(0,2); A(0,3) = a1(0,3);
+    A(1,0) = a1(1,0); A(1,1) = a1(1,1); A(1,2) = a1(1,2); A(1,3) = a1(1,3);
+    A(2,0) = a2(0,0); A(2,1) = a2(0,1); A(2,2) = a2(0,2); A(2,3) = a2(0,3);
+    A(3,0) = a2(1,0); A(3,1) = a2(1,1); A(3,2) = a2(1,2); A(3,3) = a2(1,3);
+
+    //利用SVD分解求解Ax=0
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A,Eigen::ComputeFullU|Eigen::ComputeFullV);
+    Eigen::Matrix<double,4,4> v = svd.matrixV(); 
+
+    //因为三维点的表示是四维的齐次坐标，因此要除以第四个元素
+    if(v(3,3) != 0)
+    {
+        p_3d(0,0) = v(0,3) / v(3,3);
+        p_3d(1,0) = v(1,3) / v(3,3);
+        p_3d(2,0) = v(2,3) / v(3,3);
+    }
+
+    return p_3d;
+}
+
+/*@param R旋转矩阵
+ @param t平移向量
+ @param vgood 存储匹配中能够满足条件，生成三维点的bool
+ @param th 用于重投影误差判断的阈值
+ @param p3d 存储生成的三维点云 */
+void mvg::checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double,3,1>& t,
+                vector<bool>& vgood, const float th, vector<Eigen::Vector3d>& p3d,
+                size_t& nGood)
+{
+    const size_t n = mMatches.size();
+    vgood.resize(n);
+    p3d.resize(n);
+    nGood = 0;
+
+    Eigen::Matrix<double,3,1> o1 = Eigen::Matrix<double,3,1>::Zero();
+    Eigen::Matrix<double,3,1> o2 = -R.transpose()*t; //右侧相机光心在左侧相机坐标系（全局坐标系）下的坐标
+    for(int i = 0; i<n; i++)
+    {
+        //判断是否在inliers中,不在inlier中则必然不会参与点云生成
+        if(!mIsInliers_Funda[i])
+        {
+            vgood[i] = false;
+            continue;
+        }
+        const KeyPoint p1 = mKeypointl_r[i].first;
+        const KeyPoint p2 = mKeypointl_r[i].second;
+
+        //三角化对应点
+        Eigen::Matrix<double,3,1> p3dc1 = triangulate(p1,p2,Eigen::Matrix<double,3,3>::Identity(),
+                                            R,Eigen::Matrix<double,3,1>::Zero(),t);
+
+        //三维点与图像对应点间向量的夹角
+        Eigen::Matrix<double,3,1> vectorP_o1 = p3dc1 - o1;
+        Eigen::Matrix<double,3,1> vectorP_o2 = p3dc1 - o2;
+
+        float cosineVector = vectorP_o1.dot(vectorP_o2) / (vectorP_o1.norm() * vectorP_o2.norm());
+        //三维点与对应点间向量的夹角就是视差角，剔除视差角较小的三维点，并且将成像在光心之后的点剔除
+        //按道理来说，只有一种情况三维点全部在光心之前，仅靠这个条件也可以判断，但是可能存在误差，导致
+        //姿态正确的情况下，匹配错误，三维点可能出现在光心之后，因此还是采用符合条件的点最多的条件来
+        //找正确的姿态。
+        if(p3dc1(2,0)<0 && cosineVector < 1)
+        {
+            vgood[i] = false;
+            continue;
+        }
+
+        //进行重投影，根据阈值重新剔除
+        Eigen::Matrix<double,3,1> p3dc2 = R * p3dc1 + t;
+        float reprojectp1_u = 1/p3dc1(2,0) * (mIntrinsicK(0,0)*p3dc1(0,0) + mIntrinsicK(0,2));
+        float reprojectp1_v = 1/p3dc1(2,0) * (mIntrinsicK(1,1)*p3dc1(1,0) + mIntrinsicK(1,2));
+        float reprojectp2_u = 1/p3dc2(2,0) * (mIntrinsicK(0,0)*p3dc2(0,0) + mIntrinsicK(0,2));
+        float reprojectp2_v = 1/p3dc2(2,0) * (mIntrinsicK(1,1)*p3dc2(1,0) + mIntrinsicK(1,2));
+        //计算重投影误差
+        float err1 = sqrtf((reprojectp1_u - p1.pt.x) * (reprojectp1_u - p1.pt.x) +
+                            (reprojectp1_v - p1.pt.y) * (reprojectp1_v - p1.pt.y));
+        float err2 = sqrtf((reprojectp2_u - p2.pt.x) * (reprojectp2_u - p2.pt.x) +
+                            (reprojectp2_v - p2.pt.y) * (reprojectp2_v - p2.pt.y));
+
+        if(err1 > th || err2 > th)
+        {
+            vgood[i] = false;
+            continue;
+        }
+        nGood++;
+    }
+}
+
 /*从f矩阵恢复R,T和三维坐标*/
 void mvg::constructF()
 {
@@ -459,6 +592,7 @@ void mvg::constructF()
             A(i,6) = u2;    A(i,7) = v2;    A(i,8) = 1;
         }
     }
+    //利用SVD分解求解Af=0
     Eigen::JacobiSVD<Eigen::MatrixXd> svd_f(A,Eigen::ComputeFullU||Eigen::ComputeFullV);
     Eigen::Matrix<double,9,9> V = svd_f.matrixV();
 
@@ -466,7 +600,8 @@ void mvg::constructF()
     mFundaMat(1,0) = V(3,8); mFundaMat(1,1) = V(4,8); mFundaMat(1,2) = V(5,8);
     mFundaMat(2,0) = V(6,8); mFundaMat(2,1) = V(7,8); mFundaMat(2,2) = V(8,8);
 
-    /*2.利用得到的基础矩阵分解得到R,T
+    mEssenMat = mIntrinsicK.transpose() * mFundaMat * mIntrinsicK;
+    /*2.利用得到的本质矩阵分解得到R,T
     z = [0 1 0; -1 0 0; 0 0 0];
     w = [0 -1 0; 1 0 0; 0 0 1];
     z*w = [1 0 0; 0 1 0; 0 0 0];
@@ -478,9 +613,41 @@ void mvg::constructF()
     R = UwVt; R = UwtVt;
     因此，从基础矩阵会分解出四组解，但是只有一组解在相机前方。
     */
-   Eigen::JacobiSVD<Eigen::MatrixXd> svd_rt(mFundaMat,Eigen::ComputeFullU||Eigen::ComputeFullV);
+   Eigen::JacobiSVD<Eigen::MatrixXd> svd_rt(mEssenMat,Eigen::ComputeFullU||Eigen::ComputeFullV);
    Eigen::Matrix<double,3,3> U_rt = svd_rt.matrixU();
    Eigen::Matrix<double,3,3> V_rt = svd_rt.matrixV();
+    
+   Eigen::Matrix<double,3,3> z,w;
+   z<<0,1,0,-1,0,0,0,0,0;
+   w<<0,-1,0,1,0,0,0,0,1;
 
+   Eigen::Matrix<double,3,3> R1 = U_rt * w * V_rt.transpose();
+   Eigen::Matrix<double,3,3> R2 = U_rt * w.transpose() * V_rt.transpose();
 
+   //旋转矩阵的属性，旋转矩阵的行列式大于0
+   if(R1.determinant() < 0)
+        R1 = -R1;
+   if(R2.determinant() < 0)
+        R2 = -R2;
+    
+    Eigen::Matrix<double,3,3>t1_cross = U_rt * z * U_rt.transpose();
+    Eigen::Matrix<double,3,1>t1,t2;
+    t1(0,0) = -t1_cross(1,2);
+    t1(1,0) = t1_cross(0,2);
+    t1(2,0) = -t1_cross(0,1);
+    t2 = -t1; 
+
+    //检查四组姿态中的合格姿态，并将其进行三维点云生成
+    vector<bool> vgood1,vgood2,vgood3,vgood4;
+    size_t ngood1,ngood2,ngood3,ngood4;
+    vector<Eigen::Vector3d> p3d1,p3d2,p3d3,p3d4;
+    const float th = 5;
+
+    //检查svd分解得到的r，t，并进行三角化，选出符合要求的structure和motion
+    checkRT(R1,t1,vgood1,th,p3d1,ngood1);
+    checkRT(R1,t2,vgood2,th,p3d2,ngood2);
+    checkRT(R2,t1,vgood3,th,p3d3,ngood3);
+    checkRT(R2,t2,vgood4,th,p3d4,ngood4);
+
+    
 }
