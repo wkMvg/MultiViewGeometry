@@ -15,6 +15,11 @@ using namespace cv;
 
 namespace wkMvg{
 
+enum pattern{
+    homography,
+    fundamental
+};
+
 /*Fisher-Yates_shuffle 洗牌算法
   不断缩小范围生成随机数，并且与当前id进行交换，实现随机交换，本质上实现了n！的排列数量*/
 template<typename T, class RandomGenerator,
@@ -54,7 +59,7 @@ class mvg
 {
 public:
     mvg(string dir1, string dir2, const int nfeatures, const float ratio, const int
-        maxIterations, Eigen::Matrix<double,3,3> intrisicK);
+        maxIterations, Eigen::Matrix<double,3,3> intrisicK, pattern flag);
     void computeFeat(const int nfeatures); //计算特征点和描述子
     void computeMatches(const float ratio); //计算特征点间的匹配
     void ransacAffine(const int maxIterations); //对affine变化利用ransac去除outlier
@@ -65,13 +70,14 @@ public:
     void computeFundamental(Eigen::Matrix<double,3,3>& currFundaMat,
                                 vector<pair<KeyPoint,KeyPoint>> pairs);
     void computeHomo_leastSquare();
+    void computeFunda_leastSquare();
     void checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo);
     void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);
     void showKeyPoint();
     void showMatch();
 
-    void constructH();
-    void constructF();
+    void reconstructH();
+    void reconstructF();
     Eigen::Matrix<double,3,1> triangulate(const KeyPoint& p1, const KeyPoint& p2, const Eigen::Matrix<double,3,3>& R1,
                                         const Eigen::Matrix<double,3,3>& R2,
                                         const Eigen::Matrix<double,3,1>& t1,
@@ -89,8 +95,10 @@ private:
     vector<DMatch> mMatches; //匹配index
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r; //匹配坐标对
     vector<pair<KeyPoint, KeyPoint>> mKeypointl_r_norm; // 归一化匹配坐标对
+    vector<Eigen::Matrix<double,3,1>> mP3d; //经过三角化后的三维点
     vector<bool> mIsInliers_Homo; //通过单应ransac找到的inliers
     vector<bool> mIsInliers_Funda; //通过基础矩阵ransac找到的inliers
+    vector<bool> mIsTriangulate;
 
     Eigen::Matrix<double,3,3> mIntrinsicK; //相机内参矩阵
     Eigen::Matrix<double,3,3> mSim3Nl;  //左侧相机归一化相似变换矩阵

@@ -4,10 +4,10 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "E:\\opencv-3.4.4\\build\\install\\include",
-                "E:\\opencv-3.4.4\\build\\install\\include\\opencv",
-                "E:\\opencv-3.4.4\\build\\install\\include\\opencv2",
-                "E:\\eigen-eigen-323c052e1731"
+                "E:\\c++LIBS\\opencv-3.4.4\\build\\install\\include",
+                "E:\\c++LIBS\\opencv-3.4.4\\build\\install\\include\\opencv",
+                "E:\\c++LIBS\\opencv-3.4.4\\build\\install\\include\\opencv2",
+                "E:\\c++LIBS\\eigen-eigen-323c052e1731"
             ],
             "defines": [
                 "_DEBUG",

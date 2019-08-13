@@ -1,11 +1,27 @@
 #include "MVG.hpp"
 
 using namespace wkMvg;
+
+template<typename t>
+inline t max(const vector<t> data)
+{
+    t maxNum = 0;
+    
+    for(int i = 0; i<data.size(); i++)
+    {
+        if(maxNum < data[i])
+            maxNum = data[i];
+        else
+            continue;
+    }
+    return maxNum;
+}
+
 //@param dir1,dir2 输入图像的地址
 //@param nfeatures 检测到图像特征点的数量
 //该构造函数用来计算仿射变换
 mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
-        const int maxIterations, Eigen::Matrix<double,3,3> intrinsicK)
+        const int maxIterations, Eigen::Matrix<double,3,3> intrinsicK, pattern flag)
 {
     mImgl = imread(dir1);
     mImgr = imread(dir2);
@@ -21,9 +37,17 @@ mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
 	if (mMatches.size() < 100)
 		cerr << "Attention!!! There is no enough matches to compute affine matrix!!!\n";
 
-    normalize();
-    ransacAffine(maxIterations);
-    computeHomo_leastSquare();
+    if(flag == homography)
+    {
+        normalize();
+        ransacAffine(maxIterations);
+        computeHomo_leastSquare();
+    }
+    else if(flag == fundamental)
+    {
+        ransacFundamental(maxIterations);
+        reconstructF();
+    }
 }
 
 void mvg::computeFeat(const int nfeatures)
@@ -319,6 +343,7 @@ void mvg::computeHomo_leastSquare()
 
 /*@param fundaMat 基础矩阵
 @param paris 用于计算基础矩阵的像素点对 */
+//8点法计算基础矩阵
 void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
                             vector<pair<KeyPoint,KeyPoint>> pairs)
 {
@@ -370,11 +395,11 @@ void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<doubl
         const int b2 = u1*f21 + v1*f22 + f23;
         const int c2 = u1*f31 + v1*f32 + f33;
 
-        /*计算对应点到极线的距离，作为判断*/
+        /*计算对应点到极线的距离，作为判断，正常情况下对应点应该在对侧点经过基础矩阵投影后的极线上*/
         const double epipolar_norm1 = u2*a2 + v2*b2 + c2;
         const double distance1 = epipolar_norm1 * epipolar_norm1 / (a2 * a2 + b2 * b2); 
-        if(distance1 > dist_thresh)
-            bIn = false;
+        if(distance1 < dist_thresh)
+            bIn = true;
         else
             score += dist_thresh - distance1;
 
@@ -386,7 +411,7 @@ void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<doubl
         /*计算对应点到极线的距离，作为判断*/
         const double epipolar_norm2 = u1*a1 + v1*b1 + c1;
         const double distance2 = epipolar_norm2 * epipolar_norm2 / (a1 * a1 + b1 * b1);
-        if(distance2 > dist_thresh)
+        if(distance2 < dist_thresh)
             bIn = true;
         else
             score += dist_thresh - distance2;
@@ -401,6 +426,7 @@ void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<doubl
 
 //通过ransac去除基础矩阵的outlier
 //@param maxIterations ransac要进行的最大迭代次数
+//通过ransac去除inliers，并计算基础矩阵
 void mvg::ransacFundamental(const int maxIterations)
 {
     /*首先需要一个随机数生成器，生成计算模型所需的最少随机数量 */
@@ -440,6 +466,21 @@ void mvg::ransacFundamental(const int maxIterations)
             mFundaMat = currFundamentalMat;
         }
     }
+}
+
+//从经过ransac之后的匹配对，恢复基础矩阵
+void mvg::computeFunda_leastSquare()
+{
+     vector<pair<KeyPoint,KeyPoint>> inliers_pair;
+     for(int i = 0; i<mKeypointl_r.size(); i++)
+     {
+         if(mIsInliers_Funda[i])
+         {
+             inliers_pair.push_back(mKeypointl_r[i]);
+         }
+     }
+
+     computeFundamental(mFundaMat,inliers_pair);
 }
 
 /*[-1,0,u;0,-1,v] * projectiveMat * p_3d = 0
@@ -567,40 +608,16 @@ void mvg::checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double
     }
 }
 
-/*从f矩阵恢复R,T和三维坐标*/
-void mvg::constructF()
+/*从f矩阵恢复R,T和三维坐标，
+因为f矩阵的秩为2，则f的奇异值为[sita,sita,0];又因为e=t^R,
+t^是一个反对称矩阵，R是一个正交矩阵，因此
+反对称矩阵可以写成 z=[0,1,0;-1,0,0;0,0,0]*/
+void mvg::reconstructF()
 {
-    int n = 0;
-    for(int i = 0; i < mIsInliers_Funda.size(); i++)
-    {
-        if(mIsInliers_Funda[i])
-            n++;
-    }
     /*1.首先通过最小二乘从ransac挑选出的inliers里进行拟合*/
-    Eigen::MatrixXd A(n,9);
-    for(int i = 0; i < mIsInliers_Funda.size(); i++)
-    {
-        if(mIsInliers_Funda[i])
-        {
-            const size_t u1 = mKeypointl_r_norm[i].first.pt.x;
-            const size_t v1 = mKeypointl_r_norm[i].first.pt.y;
-            const size_t u2 = mKeypointl_r_norm[i].second.pt.x;
-            const size_t v2 = mKeypointl_r_norm[i].second.pt.y;
-
-            A(i,0) = u1*u2; A(i,1) = u1*v2; A(i,2) = u1;
-            A(i,3) = v1*u2; A(i,4) = v1*v2; A(i,5) = v1;
-            A(i,6) = u2;    A(i,7) = v2;    A(i,8) = 1;
-        }
-    }
-    //利用SVD分解求解Af=0
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd_f(A,Eigen::ComputeFullU||Eigen::ComputeFullV);
-    Eigen::Matrix<double,9,9> V = svd_f.matrixV();
-
-    mFundaMat(0,0) = V(0,8); mFundaMat(0,1) = V(1,8); mFundaMat(0,2) = V(2,8);
-    mFundaMat(1,0) = V(3,8); mFundaMat(1,1) = V(4,8); mFundaMat(1,2) = V(5,8);
-    mFundaMat(2,0) = V(6,8); mFundaMat(2,1) = V(7,8); mFundaMat(2,2) = V(8,8);
-
+    computeFunda_leastSquare();   
     mEssenMat = mIntrinsicK.transpose() * mFundaMat * mIntrinsicK;
+
     /*2.利用得到的本质矩阵分解得到R,T
     z = [0 1 0; -1 0 0; 0 0 0];
     w = [0 -1 0; 1 0 0; 0 0 1];
@@ -649,5 +666,30 @@ void mvg::constructF()
     checkRT(R2,t1,vgood3,th,p3d3,ngood3);
     checkRT(R2,t2,vgood4,th,p3d4,ngood4);
 
-    
+    vector<size_t> goodNum{ngood1, ngood2, ngood3, ngood4};
+    size_t maxGood = max<size_t>(goodNum);
+
+    mP3d.resize(mKeypointl_r.size());
+    mIsTriangulate.resize(mKeypointl_r.size());
+
+    if(ngood1 == maxGood)
+    {
+        mIsTriangulate = vgood1;
+        mP3d = p3d1;
+    }
+    else if(ngood2 == maxGood)
+    {
+        mIsTriangulate = vgood2;
+        mP3d = p3d2;
+    }
+    else if(ngood3 == maxGood)
+    {
+        mIsTriangulate = vgood3;
+        mP3d = p3d3;
+    }
+    else if(ngood4 == maxGood)
+    {
+        mIsTriangulate = vgood4;
+        mP3d = p3d4;
+    }
 }

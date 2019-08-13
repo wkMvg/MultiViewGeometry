@@ -7,6 +7,7 @@ int main()
     int nfeatures = 40000;
 	float matchRatio = 0.6;
 	int ransacIterations = 500;
-    
-	mvg* doubleView = new mvg(dir1, dir2, nfeatures, matchRatio, ransacIterations);
+
+    Eigen::Matrix<double,3,3> intrinsic = Eigen::Matrix<double,3,3>::Identity();
+	wkMvg::mvg* doubleView = new wkMvg::mvg(dir1, dir2, nfeatures, matchRatio, ransacIterations, intrinsic, wkMvg::pattern::homography);
 }
