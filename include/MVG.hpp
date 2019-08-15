@@ -13,11 +13,29 @@
 using namespace std;
 using namespace cv;
 
+#define _DEBUG
+
 namespace wkMvg{
 
 enum pattern{
     homography,
-    fundamental
+    fundamental,
+	onlyKeyPointDetect
+};
+
+template<typename t>
+inline t max(const vector<t> data)
+{
+	t maxNum = 0;
+
+	for (int i = 0; i < data.size(); i++)
+	{
+		if (maxNum < data[i])
+			maxNum = data[i];
+		else
+			continue;
+	}
+	return maxNum;
 };
 
 /*Fisher-Yates_shuffle 洗牌算法
@@ -60,6 +78,7 @@ class mvg
 public:
     mvg(string dir1, string dir2, const int nfeatures, const float ratio, const int
         maxIterations, Eigen::Matrix<double,3,3> intrisicK, pattern flag);
+    ~mvg();
     void computeFeat(const int nfeatures); //计算特征点和描述子
     void computeMatches(const float ratio); //计算特征点间的匹配
     void ransacAffine(const int maxIterations); //对affine变化利用ransac去除outlier
@@ -75,6 +94,7 @@ public:
     void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);
     void showKeyPoint();
     void showMatch();
+    void showEpipolarLine(const Mat& src1, const Mat& src2);
 
     void reconstructH();
     void reconstructF();

@@ -29,10 +29,13 @@ mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
     mIntrinsicK = intrinsicK;
 
     computeFeat(nfeatures);
+#ifdef _DEBUG
     showKeyPoint();
-
+#endif
     computeMatches(ratio);
-    showMatch();
+#ifdef  _DEBUG
+	showMatch();
+#endif //  _DEBUG
 
 	if (mMatches.size() < 100)
 		cerr << "Attention!!! There is no enough matches to compute affine matrix!!!\n";
@@ -45,9 +48,23 @@ mvg::mvg(string dir1, string dir2, const int nfeatures, const float ratio,
     }
     else if(flag == fundamental)
     {
+		normalize();
         ransacFundamental(maxIterations);
         reconstructF();
     }
+}
+
+mvg::~mvg()
+{
+    mKeypointl.clear();
+    mKeypointr.clear();
+    mMatches.clear();
+    mKeypointl_r.clear();
+    mKeypointl_r_norm.clear();
+    mP3d.clear();
+    mIsInliers_Homo.clear();
+    mIsInliers_Funda.clear();
+    mIsTriangulate.clear();
 }
 
 void mvg::computeFeat(const int nfeatures)
@@ -63,7 +80,7 @@ void mvg::computeMatches(const float ratio)
     Ptr<FlannBasedMatcher> matcher = makePtr<FlannBasedMatcher>(makePtr<flann::LshIndexParams>(12,20,1));
     vector<vector<DMatch>> matchesNN;
     matcher->knnMatch(mDescl, mDescr, matchesNN, 2);
-
+#pragma omp parallel for
     for(int i = 0; i < matchesNN.size(); i++)
     {
 		if (matchesNN[i].size() == 2)
@@ -91,12 +108,15 @@ void mvg::showKeyPoint()
 {
     if(mKeypointl.size() == 0 || mKeypointr.size() == 0)
     {
-        cout<<"maybe there is no enough keypoints\n";
+        cerr<<"maybe there is no enough keypoints\n";
     }
 
     Mat keypointImgl,keypointImgr;
-    drawKeypoints(mImgl,mKeypointl,keypointImgl,Scalar(255,0,0));
-    drawKeypoints(mImgr,mKeypointr,keypointImgr,Scalar(255,0,0));
+
+	Scalar color(255.*rand() / RAND_MAX, 255.*rand() / RAND_MAX, 255.*rand() / RAND_MAX);
+
+    drawKeypoints(mImgl,mKeypointl,keypointImgl,Scalar::all(-1));
+    drawKeypoints(mImgr,mKeypointr,keypointImgr,Scalar::all(-1));
 
     imshow("keypointsL",keypointImgl);
     imshow("keypointsR",keypointImgr);
@@ -111,11 +131,12 @@ void mvg::showMatch()
 {
     if(mMatches.size() == 0)
     {
-        cout << "Maybe there is no enough match\n";
+        cerr << "Maybe there is no enough match\n";
     }
     Mat imgMatch;
-    drawMatches(mImgl, mKeypointl, mImgr, mKeypointr,
-                mMatches, imgMatch, Scalar(255,0,0));
+	Scalar color(255.*rand() / RAND_MAX, 255.*rand() / RAND_MAX, 255.*rand() / RAND_MAX);
+	drawMatches(mImgl, mKeypointl, mImgr, mKeypointr,
+		mMatches, imgMatch, Scalar::all(-1));
     imshow("matches",imgMatch);
     imwrite("matches.tif",imgMatch);
     waitKey();
@@ -341,9 +362,12 @@ void mvg::computeHomo_leastSquare()
     mHomoMat = mSim3Nr.inverse() * currHomo * mSim3Nl;
 }
 
-/*@param fundaMat 基础矩阵
+/*
+@param fundaMat 基础矩阵
 @param paris 用于计算基础矩阵的像素点对 */
 //8点法计算基础矩阵
+//1。首先是线性解法，求解Ax=0,解出一个初始的f
+//2. 增加一个奇异性约束，将初始的f进行奇异值分解，令最小的奇异值为0
 void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
                             vector<pair<KeyPoint,KeyPoint>> pairs)
 {
@@ -357,9 +381,15 @@ void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
         size_t u2 = pairs[i].second.pt.x;
         size_t v2 = pairs[i].second.pt.y;
 
-        A(i,0) = u1*u2; A(i,1) = u1*v2; A(i,2) = u1;
-        A(i,3) = v1*u2; A(i,4) = v1*v2; A(i,5) = v1;
-        A(i,6) = u2; A(i,7) = v2; A(i,8) = 1;
+        A(i,0) = u1*u2;
+		A(i,1) = v1*u2;
+		A(i,2) = u2;
+        A(i,3) = u1*v2;
+		A(i,4) = v1*v2;
+		A(i,5) = v2;
+        A(i,6) = u1;
+		A(i,7) = v1;
+		A(i,8) = 1;
     }
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeFullU|Eigen::ComputeFullV);
     Eigen::Matrix<double,9,9> v = svd.matrixV();
@@ -367,6 +397,15 @@ void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
     fundaMat(0,0) = v(0,8); fundaMat(0,1) = v(1,8); fundaMat(0,2) = v(2,8);
     fundaMat(1,0) = v(3,8); fundaMat(1,1) = v(4,8); fundaMat(1,2) = v(5,8);
     fundaMat(2,0) = v(6,8); fundaMat(2,1) = v(7,8); fundaMat(2,2) = v(8,8);
+
+	Eigen::JacobiSVD<Eigen::MatrixXd> svd_f(fundaMat, Eigen::ComputeFullU | Eigen::ComputeFullV);
+	Eigen::Matrix<double, 3, 3> u_f = svd_f.matrixU();
+	Eigen::Matrix<double, 3, 3> v_f = svd_f.matrixV();
+	Eigen::Matrix<double, 3, 1> w_f = svd_f.singularValues();
+	
+	Eigen::Matrix<double, 3, 3> w_m = Eigen::Matrix<double, 3, 3>::Zero();
+	w_m(0, 0) = w_f(0, 0);	w_m(1, 1) = w_f(1, 0);
+	fundaMat = u_f * w_m * v_f.transpose();
 }
 
 /*基础矩阵似乎不用再乘以相似变换矩阵，因为f矩阵的奇异性？*/
@@ -376,6 +415,7 @@ void mvg::computeFundamental(Eigen::Matrix<double,3,3>& fundaMat,
 void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund)
 {
     const size_t n = isInliers.size();
+
     const double f11 = currFund(0,0), f12 = currFund(0,1), f13 = currFund(0,2),
                  f21 = currFund(1,0), f22 = currFund(1,1), f23 = currFund(1,2),
                  f31 = currFund(2,0), f32 = currFund(2,1), f33 = currFund(2,2);
@@ -383,45 +423,119 @@ void mvg::checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<doubl
     bool bIn = false;
     score = 0;
     const double dist_thresh = 5;
+
     for(int i = 0; i<n; i++)
     {
-        const int u1 = mKeypointl_r[i].first.pt.x;
-        const int v1 = mKeypointl_r[i].first.pt.y;
-        const int u2 = mKeypointl_r[i].second.pt.x;
-        const int v2 = mKeypointl_r[i].second.pt.y;          
+        const float u1 = mKeypointl_r[i].first.pt.x;
+        const float v1 = mKeypointl_r[i].first.pt.y;
+        const float u2 = mKeypointl_r[i].second.pt.x;
+        const float v2 = mKeypointl_r[i].second.pt.y;          
 
         /*计算(u1,v1)经过基础矩阵投影到对应图像上的极线方程 */
-        const int a2 = u1*f11 + v1*f12 + f13;
-        const int b2 = u1*f21 + v1*f22 + f23;
-        const int c2 = u1*f31 + v1*f32 + f33;
+        double a2 = u1*f11 + v1*f12 + f13;
+        double b2 = u1*f21 + v1*f22 + f23;
+        double c2 = u1*f31 + v1*f32 + f33;
 
-        /*计算对应点到极线的距离，作为判断，正常情况下对应点应该在对侧点经过基础矩阵投影后的极线上*/
-        const double epipolar_norm1 = u2*a2 + v2*b2 + c2;
-        const double distance1 = epipolar_norm1 * epipolar_norm1 / (a2 * a2 + b2 * b2); 
-        if(distance1 < dist_thresh)
-            bIn = true;
-        else
-            score += dist_thresh - distance1;
+        double epipolar_norm1 = u2*a2 + v2*b2 + c2;
+        const double distance1 = sqrtf(epipolar_norm1 * epipolar_norm1 / (a2 * a2 + b2 * b2)); 
+		if (distance1 < dist_thresh)
+		{
+			bIn = true;
+			score += dist_thresh - distance1;
+		}
+		else
+		{
+			bIn = false;
+		}
 
-        /*计算(u2,v2)经过基础矩阵投影到对应图像上的极线方程*/
-        const int a1 = u2*f11 + v2*f12 + f13;
-        const int b1 = u2*f21 + v2*f22 + f23;
-        const int c1 = u2*f31 + v2*f32 + f33;
+		double a1 = u2 * f11 + v2 * f21 + f31;
+		double b1 = u2*f12 + v2 * f22 + f32;
+		double c1 = u2*f13 + v2 * f23 + f33;
 
         /*计算对应点到极线的距离，作为判断*/
-        const double epipolar_norm2 = u1*a1 + v1*b1 + c1;
-        const double distance2 = epipolar_norm2 * epipolar_norm2 / (a1 * a1 + b1 * b1);
-        if(distance2 < dist_thresh)
-            bIn = true;
-        else
-            score += dist_thresh - distance2;
+		double epipolar_norm2;
+		epipolar_norm2  = u1 * a1 + v1 * b1 + c1;
+        double distance2 = epipolar_norm2 * epipolar_norm2 / (a1 * a1 + b1 * b1);
+		if (distance2 < dist_thresh)
+		{
+			bIn = true;
+			score += dist_thresh - distance2;
+		}
+		else
+		{
+			bIn = false;
+		}
 
-        if(bIn)
-            isInliers[i] = true;
-        else
-            isInliers[i] = false;
-        
+		if (bIn)
+		{
+			isInliers[i] = true;
+		}
+		else
+		{
+			isInliers[i] = false;
+		}
     }
+}
+
+void mvg::showEpipolarLine(const Mat& src1, const Mat& src2)
+{
+    Mat dst1,dst2;
+    dst1.create(src1.rows, src1.cols, src1.type());
+    dst2.create(src2.rows, src2.cols, src2.type());
+
+    src1.copyTo(dst1);
+    src2.copyTo(dst2);
+
+    size_t n = mIsInliers_Funda.size();
+#pragma omp parallel for
+    for(int i = 0; i<n; i++)
+    {
+        if(mIsInliers_Funda[i])
+        {
+            const float u1 = mKeypointl_r[i].first.pt.x;
+            const float v1 = mKeypointl_r[i].first.pt.y;
+            const float u2 = mKeypointl_r[i].second.pt.x;
+            const float v2 = mKeypointl_r[i].second.pt.y;
+
+            const double f11 = mFundaMat(0,0);
+            const double f12 = mFundaMat(0,1);
+            const double f13 = mFundaMat(0,2);
+            const double f21 = mFundaMat(1,0);
+            const double f22 = mFundaMat(1,1);
+            const double f23 = mFundaMat(1,2);
+            const double f31 = mFundaMat(2,0);
+            const double f32 = mFundaMat(2,1);
+            const double f33 = mFundaMat(2,2);
+
+            double img2LineA = f11 * u1 + f12 * v1 + f13;
+            double img2LineB = f21 * u1 + f22 * v1 + f23;
+            double img2LineC = f31 * u1 + f32 * v1 + f33;
+
+            double img1LineA = f11 * u2 + f21 * v2 + f31;
+            double img1LineB = f12 * u2 + f22 * v2 + f32;
+            double img1LineC = f13 * u2 + f23 * v2 + f33;
+
+            Point2f start1(0,0), end1(src1.cols,0),start2(0,0), end2(src2.cols,0);
+            start1.y = -(img1LineA * start1.x + img1LineC) / img1LineB;
+            end1.y = -(img1LineA * end1.x + img1LineC) / img1LineB;
+            start2.y = -(img2LineA * start2.x + img2LineC) / img2LineB;
+            end2.y = -(img2LineA * end2.x + img2LineC) / img2LineB;
+
+            Scalar color(255.*rand()/RAND_MAX, 255.*rand()/RAND_MAX, 255.*rand()/RAND_MAX);
+			circle(dst1, mKeypointl_r[i].first.pt, 1, color, cv::LINE_AA);
+			circle(dst2, mKeypointl_r[i].second.pt, 1, color, LINE_AA);
+            line(dst1,start1,end1,color);
+            line(dst2,start2,end2,color);
+        }
+    }
+	namedWindow("epipolar1", WINDOW_NORMAL);
+	namedWindow("epipolar2", WINDOW_NORMAL);
+
+	imshow("epipolar1", dst1);
+	imshow("epipolar2", dst2);
+
+    imwrite("epipolarLine1.png",dst1);
+    imwrite("epipolarLine2.png",dst2);
 }
 
 //通过ransac去除基础矩阵的outlier
@@ -449,11 +563,11 @@ void mvg::ransacFundamental(const int maxIterations)
     /*根据最大次数进行迭代，从中取出分数最大的即可*/
     for(int i = 0; i < maxIterations; i++)
     {
-        vector<pair<KeyPoint,KeyPoint>> selectedPairs(8);
+        vector<pair<KeyPoint,KeyPoint>> selectedPairs;
         Eigen::Matrix<double,3,3> currFundamentalMat;
         for(int j = 0; j < 8; j++)
         {
-            selectedPairs.push_back(mKeypointl_r_norm[randomIndexGroup[i][j]]);
+            selectedPairs.push_back(mKeypointl_r[randomIndexGroup[i][j]]);
         }
 
         computeFundamental(currFundamentalMat,selectedPairs);
@@ -465,7 +579,10 @@ void mvg::ransacFundamental(const int maxIterations)
             mIsInliers_Funda = isInliersCurr;
             mFundaMat = currFundamentalMat;
         }
+		selectedPairs.clear();
     }
+
+	showEpipolarLine(mImgl, mImgr);
 }
 
 //从经过ransac之后的匹配对，恢复基础矩阵
@@ -485,12 +602,14 @@ void mvg::computeFunda_leastSquare()
 
 /*[-1,0,u;0,-1,v] * projectiveMat * p_3d = 0
 利用svd分解求解齐次线性方程组，即可完成三角化 */
-/*@param p1 左图关键点
+/*
+@param p1 左图关键点
 @param p2 右图关键点
 @param R1 全局坐标系转换到左相机下的旋转矩阵
 @param R2 全局坐标系转换到右相机下的旋转矩阵
 @param t1 全局坐标系平移到左相机下的平移向量
-@param t2 全局坐标系平移到右相机下的平移向量 */
+@param t2 全局坐标系平移到右相机下的平移向量 
+*/
 Eigen::Matrix<double,3,1> mvg::triangulate(const KeyPoint& p1, const KeyPoint& p2,
                             const Eigen::Matrix<double,3,3>& R1,
                             const Eigen::Matrix<double,3,3>& R2,
@@ -614,7 +733,8 @@ t^是一个反对称矩阵，R是一个正交矩阵，因此
 反对称矩阵可以写成 z=[0,1,0;-1,0,0;0,0,0]*/
 void mvg::reconstructF()
 {
-    /*1.首先通过最小二乘从ransac挑选出的inliers里进行拟合*/
+    ///*1.首先通过最小二乘从ransac挑选出的inliers里进行拟合*/
+
     computeFunda_leastSquare();   
     mEssenMat = mIntrinsicK.transpose() * mFundaMat * mIntrinsicK;
 
@@ -626,13 +746,14 @@ void mvg::reconstructF()
     f = UDVt = UzwVt = UzUt* UwVt = t^ * R;
     f = UDVt = -UzwtVt = -UzUt*UwtVt = t^ * R;
     所以:
-    t^ = UzUt; t^ = -UzUt;
+    t^ = UzUt; t^ = -UzUt; 
     R = UwVt; R = UwtVt;
     因此，从基础矩阵会分解出四组解，但是只有一组解在相机前方。
     */
-   Eigen::JacobiSVD<Eigen::MatrixXd> svd_rt(mEssenMat,Eigen::ComputeFullU||Eigen::ComputeFullV);
-   Eigen::Matrix<double,3,3> U_rt = svd_rt.matrixU();
-   Eigen::Matrix<double,3,3> V_rt = svd_rt.matrixV();
+
+   Eigen::JacobiSVD<Eigen::MatrixXd> svd(mEssenMat, Eigen::ComputeThinU || Eigen::ComputeThinV);
+   Eigen::Matrix<double, 3, 3> V_rt = svd.matrixV();
+   Eigen::Matrix<double, 3, 3> U_rt = svd.matrixU();
     
    Eigen::Matrix<double,3,3> z,w;
    z<<0,1,0,-1,0,0,0,0,0;
