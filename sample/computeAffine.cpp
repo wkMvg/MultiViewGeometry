@@ -2,15 +2,15 @@
 
 int main()
 {
-	/*string dir1 = "F:\\data\\5.11\\image\\DSC00483.JPG";
-    string dir2 = "F:\\data\\5.11\\image\\DSC00487.JPG";*/
-	string dir1 = "000000.png";
-	string dir2 = "000011.png";
+	string dir1 = "F:\\data\\5.11\\image\\DSC00483.JPG";
+    string dir2 = "F:\\data\\5.11\\image\\DSC00487.JPG";
+	/*string dir1 = "000000.png";
+	string dir2 = "000011.png";*/
 	/*string dir1 = "1.jpg";
 	string dir2 = "2.jpg";*/
 
     int nfeatures = 40000;
-	float matchRatio = 0.75;
+	float matchRatio = 0.6;
 	int ransacIterations = 500;
 
     Eigen::Matrix<double,3,3> intrinsic = Eigen::Matrix<double,3,3>::Identity();

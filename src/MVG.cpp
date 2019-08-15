@@ -708,10 +708,16 @@ void mvg::checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double
 
         //进行重投影，根据阈值重新剔除
         Eigen::Matrix<double,3,1> p3dc2 = R * p3dc1 + t;
-        float reprojectp1_u = 1/p3dc1(2,0) * (mIntrinsicK(0,0)*p3dc1(0,0) + mIntrinsicK(0,2));
-        float reprojectp1_v = 1/p3dc1(2,0) * (mIntrinsicK(1,1)*p3dc1(1,0) + mIntrinsicK(1,2));
-        float reprojectp2_u = 1/p3dc2(2,0) * (mIntrinsicK(0,0)*p3dc2(0,0) + mIntrinsicK(0,2));
-        float reprojectp2_v = 1/p3dc2(2,0) * (mIntrinsicK(1,1)*p3dc2(1,0) + mIntrinsicK(1,2));
+		if (p3dc2(2, 0) < 0)
+		{
+			vgood[i] = false;
+			continue;
+		}
+
+        float reprojectp1_u = 1/p3dc1(2,0) * (mIntrinsicK(0,0)*p3dc1(0,0)) + mIntrinsicK(0,2);
+        float reprojectp1_v = 1/p3dc1(2,0) * (mIntrinsicK(1,1)*p3dc1(1,0)) + mIntrinsicK(1,2);
+        float reprojectp2_u = 1/p3dc2(2,0) * (mIntrinsicK(0,0)*p3dc2(0,0)) + mIntrinsicK(0,2);
+        float reprojectp2_v = 1/p3dc2(2,0) * (mIntrinsicK(1,1)*p3dc2(1,0)) + mIntrinsicK(1,2);
         //计算重投影误差
         float err1 = sqrtf((reprojectp1_u - p1.pt.x) * (reprojectp1_u - p1.pt.x) +
                             (reprojectp1_v - p1.pt.y) * (reprojectp1_v - p1.pt.y));
@@ -723,6 +729,8 @@ void mvg::checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double
             vgood[i] = false;
             continue;
         }
+		p3d.push_back(p3dc1);
+
         nGood++;
     }
 }
@@ -738,22 +746,22 @@ void mvg::reconstructF()
     computeFunda_leastSquare();   
     mEssenMat = mIntrinsicK.transpose() * mFundaMat * mIntrinsicK;
 
-    /*2.利用得到的本质矩阵分解得到R,T
-    z = [0 1 0; -1 0 0; 0 0 0];
-    w = [0 -1 0; 1 0 0; 0 0 1];
-    z*w = [1 0 0; 0 1 0; 0 0 0];
-    z*wt = -[1 0 0; 0 1 0; 0 0 0];
-    f = UDVt = UzwVt = UzUt* UwVt = t^ * R;
-    f = UDVt = -UzwtVt = -UzUt*UwtVt = t^ * R;
-    所以:
-    t^ = UzUt; t^ = -UzUt; 
-    R = UwVt; R = UwtVt;
-    因此，从基础矩阵会分解出四组解，但是只有一组解在相机前方。
-    */
-
-   Eigen::JacobiSVD<Eigen::MatrixXd> svd(mEssenMat, Eigen::ComputeThinU || Eigen::ComputeThinV);
-   Eigen::Matrix<double, 3, 3> V_rt = svd.matrixV();
-   Eigen::Matrix<double, 3, 3> U_rt = svd.matrixU();
+   /*
+   2.利用得到的本质矩阵分解得到R,T
+   z = [0 1 0; -1 0 0; 0 0 0];
+   w = [0 -1 0; 1 0 0; 0 0 1];
+   z*w = [1 0 0; 0 1 0; 0 0 0];
+   z*wt = -[1 0 0; 0 1 0; 0 0 0];
+   f = UDVt = UzwVt = UzUt* UwVt = t^ * R;
+   f = UDVt = -UzwtVt = -UzUt*UwtVt = t^ * R;
+   所以:
+   t^ = UzUt; t^ = -UzUt;
+   R = UwVt; R = UwtVt;
+   因此，从基础矩阵会分解出四组解，但是只有一组解在相机前方。
+   */
+	Eigen::JacobiSVD<Eigen::Matrix<double, 3, 3>> svd(mEssenMat, Eigen::ComputeFullU | Eigen::ComputeFullV);
+	Eigen::Matrix<double, 3, 3> U_rt = svd.matrixU();
+	Eigen::Matrix<double, 3, 3> V_rt = svd.matrixV();
     
    Eigen::Matrix<double,3,3> z,w;
    z<<0,1,0,-1,0,0,0,0,0;
@@ -773,14 +781,15 @@ void mvg::reconstructF()
     t1(0,0) = -t1_cross(1,2);
     t1(1,0) = t1_cross(0,2);
     t1(2,0) = -t1_cross(0,1);
-    t2 = -t1; 
+	t1 /= t1.norm();
+	t2 = -t1;
 
     //检查四组姿态中的合格姿态，并将其进行三维点云生成
     vector<bool> vgood1,vgood2,vgood3,vgood4;
     size_t ngood1,ngood2,ngood3,ngood4;
     vector<Eigen::Vector3d> p3d1,p3d2,p3d3,p3d4;
-    const float th = 5;
-
+    const float th = 200;
+	
     //检查svd分解得到的r，t，并进行三角化，选出符合要求的structure和motion
     checkRT(R1,t1,vgood1,th,p3d1,ngood1);
     checkRT(R1,t2,vgood2,th,p3d2,ngood2);

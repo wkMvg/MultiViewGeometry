@@ -85,25 +85,25 @@ public:
     void ransacFundamental(const int maxIterations); //对基础矩阵模型，利用ransac去除outlier
     void normalize(); //归一化特征点坐标
     void computeHomo(Eigen::Matrix<double,3,3>& currHomo, 
-                                vector<pair<KeyPoint,KeyPoint>> pairs);
+                                vector<pair<KeyPoint,KeyPoint>> pairs); //8点法计算单应矩阵
     void computeFundamental(Eigen::Matrix<double,3,3>& currFundaMat,
-                                vector<pair<KeyPoint,KeyPoint>> pairs);
-    void computeHomo_leastSquare();
-    void computeFunda_leastSquare();
-    void checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo);
-    void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);
-    void showKeyPoint();
-    void showMatch();
-    void showEpipolarLine(const Mat& src1, const Mat& src2);
+                                vector<pair<KeyPoint,KeyPoint>> pairs); //8点法计算基础矩阵
+    void computeHomo_leastSquare(); //通过ransac滤波后的对应点，计算单应矩阵
+    void computeFunda_leastSquare();//通过ransac滤波后的对应点，计算基础矩阵
+    void checkHomo(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currHomo); //在ransac过程中，判断当前模型的误差
+    void checkFunda(vector<bool>& isInliers, double& score, Eigen::Matrix<double,3,3>& currFund);//在ransac过程中，判断当前模型的误差
+    void showKeyPoint(); //显示检测到的关键点
+    void showMatch(); //显示匹配
+    void showEpipolarLine(const Mat& src1, const Mat& src2); //根据基础矩阵，计算外极线，并显示
 
-    void reconstructH();
-    void reconstructF();
+    void reconstructH(); //根据单应矩阵，恢复姿态和三维点
+    void reconstructF(); //根据基础矩阵，恢复姿态和三维点
     Eigen::Matrix<double,3,1> triangulate(const KeyPoint& p1, const KeyPoint& p2, const Eigen::Matrix<double,3,3>& R1,
                                         const Eigen::Matrix<double,3,3>& R2,
                                         const Eigen::Matrix<double,3,1>& t1,
-                                        const Eigen::Matrix<double,3,1>& t2);
+                                        const Eigen::Matrix<double,3,1>& t2); //已知姿态和内参，计算对应点的三维坐标，是一种线性方法
     void checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double,3,1>& t,
-                vector<bool>& vgood, const float th, vector<Eigen::Vector3d>& p3d, size_t& nGood);
+                vector<bool>& vgood, const float th, vector<Eigen::Vector3d>& p3d, size_t& nGood);//判断当前计算得到的姿态的准确性
 private:
     Mat mImgl; // 图像
     Mat mImgr; 
@@ -118,7 +118,7 @@ private:
     vector<Eigen::Matrix<double,3,1>> mP3d; //经过三角化后的三维点
     vector<bool> mIsInliers_Homo; //通过单应ransac找到的inliers
     vector<bool> mIsInliers_Funda; //通过基础矩阵ransac找到的inliers
-    vector<bool> mIsTriangulate;
+    vector<bool> mIsTriangulate; //对应匹配index，是否已经完成三角化
 
     Eigen::Matrix<double,3,3> mIntrinsicK; //相机内参矩阵
     Eigen::Matrix<double,3,3> mSim3Nl;  //左侧相机归一化相似变换矩阵
