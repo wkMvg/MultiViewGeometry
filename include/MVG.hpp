@@ -4,6 +4,9 @@
 #include <cmath>
 #include <random>
 #include <numeric>
+#include <fstream>
+#include <iomanip>
+#include <limits>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/features2d.hpp>
@@ -104,7 +107,9 @@ public:
                                         const Eigen::Matrix<double,3,1>& t2); //已知姿态和内参，计算对应点的三维坐标，是一种线性方法
     void checkRT(const Eigen::Matrix<double,3,3>& R, const Eigen::Matrix<double,3,1>& t,
                 vector<bool>& vgood, const float th, vector<Eigen::Vector3d>& p3d, size_t& nGood);//判断当前计算得到的姿态的准确性
+    void savePly(string filename);
 private:
+    size_t mTriangulateNum;
     Mat mImgl; // 图像
     Mat mImgr; 
     Mat mDescl; // 描述子
@@ -126,6 +131,8 @@ private:
     Eigen::Matrix<double,3,3> mHomoMat; //单应变换矩阵 
     Eigen::Matrix<double,3,3> mFundaMat; //基础矩阵
     Eigen::Matrix<double,3,3> mEssenMat; //本质矩阵
+    Eigen::Matrix<double,3,3> mR; //世界坐标系转换到右相机坐标系的旋转矩阵
+    Eigen::Matrix<double,3,1> mt; //世界坐标系转换到右相机坐标系的平移向量
 };
 }
 
